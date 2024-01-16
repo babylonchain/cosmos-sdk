@@ -389,17 +389,24 @@ func (ts *defaultTxSelector) SelectTxForProposal(_ context.Context, maxTxBytes, 
 		// If there is a max block gas limit, add the tx only if the limit has
 		// not been met.
 		if maxBlockGas > 0 {
-			if (txGasLimit + ts.totalTxGas) <= maxBlockGas {
-				ts.totalTxGas += txGasLimit
-				ts.totalTxBytes += txSize
-				ts.selectedTxs = append(ts.selectedTxs, txBz)
+			if (txGasLimit + ts.totalTxGas) > maxBlockGas {
+				// Note: we should stop selecting txs here even though
+				// a next tx will not overwhelm the block. Otherwise,
+				// we may end up in a case where a tx with lower sequence
+				// number but large gas limit is skipped but another one
+				// with higher sequence number but small gas limit is selected
+				// this will cause incorrect sequence number in ProcessProposal
+				// which might stall the whole chain
+				return true
 			}
+			ts.totalTxGas += txGasLimit
+			ts.totalTxBytes += txSize
+			ts.selectedTxs = append(ts.selectedTxs, txBz)
 		} else {
 			ts.totalTxBytes += txSize
 			ts.selectedTxs = append(ts.selectedTxs, txBz)
 		}
 	}
 
-	// check if we've reached capacity; if so, we cannot select any more transactions
-	return ts.totalTxBytes >= maxTxBytes || (maxBlockGas > 0 && (ts.totalTxGas >= maxBlockGas))
+	return true
 }
